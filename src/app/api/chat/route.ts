@@ -10,13 +10,21 @@ interface ChatMessage {
 
 interface RequestBody {
   message: string;
-  personalityMode?: 'casual' | 'funny' | 'romantic' | 'supportive';
+  personalityMode?: string | { name: string; [key: string]: any };
   conversationHistory?: ChatMessage[];
 }
 
 export async function POST(request: Request) {
   try {
-    const { message, personalityMode, conversationHistory } = await request.json() as RequestBody;
+    console.log('Chat API called');
+    const body = await request.json();
+    const { message, personalityMode, conversationHistory } = body as RequestBody;
+    
+    console.log('Request body:', { 
+      messageLength: message?.length || 0, 
+      personalityMode: personalityMode || 'default', 
+      historyLength: conversationHistory?.length || 0 
+    });
 
     if (!message) {
       return NextResponse.json(
@@ -41,6 +49,19 @@ export async function POST(request: Request) {
       supportive: "You are a supportive and empathetic chatbot. Show understanding and offer encouragement."
     };
 
+    // For backward compatibility - handle if personality is sent as an object with name property
+    let selectedPersonality = 'casual';
+    if (typeof personalityMode === 'string') {
+      selectedPersonality = personalityMode;
+    } else if (personalityMode && typeof personalityMode === 'object' && 'name' in personalityMode) {
+      selectedPersonality = personalityMode.name as string;
+    }
+    
+    console.log('Selected personality:', selectedPersonality);
+
+    // Get personality prompt
+    const personalityPrompt = personalityPrompts[selectedPersonality] || personalityPrompts.casual;
+
     // Format conversation history
     function formatConversationHistory(history: ChatMessage[] | undefined): string {
       if (!history || !Array.isArray(history)) return '';
@@ -51,9 +72,6 @@ export async function POST(request: Request) {
         .join('\n');
     }
 
-    // Get personality prompt
-    const personalityPrompt = personalityPrompts[personalityMode || 'casual'] || personalityPrompts.casual;
-    
     // Format conversation history
     const formattedHistory = formatConversationHistory(conversationHistory);
     

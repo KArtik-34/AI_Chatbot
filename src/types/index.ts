@@ -5,6 +5,7 @@ export interface PersonalityMode {
 }
 
 export interface Message {
+  id: string;
   content: string;
   timestamp: string;
   role: 'user' | 'assistant';

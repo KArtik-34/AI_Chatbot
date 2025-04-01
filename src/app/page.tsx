@@ -435,6 +435,7 @@ export default function Home() {
       }));
 
       // Send to backend
+      console.log('Sending message to API:', `${API_ROUTE}/chat`);
       const response = await fetch(`${API_ROUTE}/chat`, {
         method: 'POST',
         headers: {
@@ -442,13 +443,17 @@ export default function Home() {
         },
         body: JSON.stringify({
           message: currentMessage,
-          personalityMode: activeChat?.personality,
+          personalityMode: activeChat?.personality?.name || 'casual',
           conversationHistory: activeChat?.messages
         }),
       });
 
+      console.log('API response status:', response.status);
+      
       if (!response.ok) {
-        throw new Error('Failed to send message');
+        const errorText = await response.text();
+        console.error('API error:', response.status, errorText);
+        throw new Error(`Failed to send message: ${response.status} ${errorText}`);
       }
 
       const data = await response.json();
@@ -479,6 +484,7 @@ export default function Home() {
       // Generate title if this is the first exchange
       if (activeChat?.messages.length === 0) {
         try {
+          console.log('Generating title for conversation');
           const titleResponse = await fetch(`${API_ROUTE}/generate-title`, {
             method: 'POST',
             headers: {
@@ -490,19 +496,31 @@ export default function Home() {
             }),
           });
 
+          console.log('Title API response status:', titleResponse.status);
+          
           if (titleResponse.ok) {
             const titleData = await titleResponse.json();
-            const newTitle = titleData.response.trim();
-            setChats(prev => prev.map(chat => {
-              if (chat.id === activeChatId) {
-                return {
-                  ...chat,
-                  title: newTitle,
-                  timestamp: new Date().toISOString()
-                };
-              }
-              return chat;
-            }));
+            console.log('Title API response data:', titleData);
+            // Fix title extraction - check both response and title fields
+            const newTitle = (titleData.title || titleData.response || '').trim();
+            if (newTitle) {
+              console.log('Generated new title:', newTitle);
+              setChats(prev => prev.map(chat => {
+                if (chat.id === activeChatId) {
+                  return {
+                    ...chat,
+                    title: newTitle,
+                    timestamp: new Date().toISOString()
+                  };
+                }
+                return chat;
+              }));
+            } else {
+              console.warn('Failed to extract title from response');
+            }
+          } else {
+            const errorText = await titleResponse.text();
+            console.error('Title API error:', titleResponse.status, errorText);
           }
         } catch (error) {
           console.error('Error generating title:', error);
@@ -549,7 +567,7 @@ export default function Home() {
     inputRef.current?.focus();
   };
 
-  const handleDeleteChat = (chatId: string, event?: React.MouseEvent) => {
+  const handleDeleteChat = (chatId: string, event?: React.MouseEvent<HTMLButtonElement>) => {
     if (event) {
       event.stopPropagation();
     }
@@ -1043,15 +1061,15 @@ export default function Home() {
                 fullWidth
                 multiline
                 maxRows={4}
-            value={inputMessage}
+                value={inputMessage}
                 onChange={handleInputChange}
-                onKeyPress={(e) => {
+                onKeyPress={(e: React.KeyboardEvent<HTMLDivElement>) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleSendMessage(e);
                   }
                 }}
-            placeholder="Type your message..."
+                placeholder="Type your message..."
                 disabled={!activeChatId}
                 inputRef={inputRef}
                 sx={{
