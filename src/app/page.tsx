@@ -45,6 +45,7 @@ export default function Home() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -167,6 +168,7 @@ export default function Home() {
     ));
   }, [messages]); // Now depends on the stable memoized messages array
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const generateChatTitle = (messages: Message[]): string => {
     if (messages.length < 2) return 'New Chat';
 
@@ -369,6 +371,7 @@ export default function Home() {
       .join(' ');
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const generateTitleWithGemini = async (messages: Message[]): Promise<string> => {
     if (messages.length < 2) return 'New Chat';
 
@@ -768,7 +771,7 @@ export default function Home() {
                 <IconButton
                   edge="end"
                   aria-label="delete"
-                  onClick={(e) => {
+                  onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                     e.stopPropagation();
                     handleDeleteChat(chat.id);
                   }}

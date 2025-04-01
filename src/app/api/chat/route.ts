@@ -10,7 +10,7 @@ interface ChatMessage {
 
 interface RequestBody {
   message: string;
-  personalityMode?: string | { name: string; [key: string]: any };
+  personalityMode?: string | { name: string; [key: string]: unknown };
   conversationHistory?: ChatMessage[];
 }
 
