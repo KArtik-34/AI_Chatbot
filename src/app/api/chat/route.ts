@@ -14,6 +14,12 @@ interface RequestBody {
   conversationHistory?: ChatMessage[];
 }
 
+type ApiError = {
+  message: string;
+  code?: string;
+  details?: unknown;
+};
+
 export async function POST(request: Request) {
   try {
     console.log('Chat API called');
@@ -111,9 +117,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ response: text });
   } catch (error: unknown) {
     console.error('Chat route error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'An error occurred while processing your request' },
-      { status: 500 }
-    );
+    const apiError: ApiError = {
+      message: error instanceof Error ? error.message : 'An error occurred while processing your request',
+      code: 'CHAT_ERROR'
+    };
+    return NextResponse.json({ error: apiError }, { status: 500 });
   }
 } 

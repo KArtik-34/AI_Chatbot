@@ -45,7 +45,6 @@ export default function Home() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -415,9 +414,9 @@ export default function Home() {
     if (!inputMessage.trim() || !activeChatId) return;
 
     try {
+      setError(null); // Clear any previous errors
       setIsTyping(true);
-      setError(null);
-
+      
       const userMessage: Message = {
         id: uuidv4(),
         content: inputMessage.trim(),
@@ -529,9 +528,9 @@ export default function Home() {
           console.error('Error generating title:', error);
         }
       }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setError('Failed to send message. Please try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while sending the message');
+      console.error('Error sending message:', err);
     } finally {
       setIsTyping(false);
     }
@@ -1123,6 +1122,11 @@ export default function Home() {
               }}
             />
           </Container>
+          {error && (
+            <Box sx={{ p: 2, bgcolor: 'error.main', color: 'error.contrastText' }}>
+              <Typography>{error}</Typography>
+            </Box>
+          )}
         </Box>
       </Box>
     </ThemeProvider>
