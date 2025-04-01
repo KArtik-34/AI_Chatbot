@@ -3,13 +3,24 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
 
+interface ChatMessage {
+  sender: 'user' | 'assistant';
+  content: string;
+}
+
+interface RequestBody {
+  message: string;
+  personalityMode?: 'casual' | 'funny' | 'romantic' | 'supportive';
+  conversationHistory?: ChatMessage[];
+}
+
 export async function POST(request: Request) {
   try {
-    const { message, chatId, personality } = await request.json();
+    const { message, personalityMode, conversationHistory } = await request.json() as RequestBody;
 
-    if (!message || !chatId) {
+    if (!message) {
       return NextResponse.json(
-        { error: 'Message and chatId are required' },
+        { error: 'Message is required' },
         { status: 400 }
       );
     }
@@ -22,69 +33,68 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('Initializing Gemini model...');
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    // Personality prompts
+    const personalityPrompts: Record<string, string> = {
+      casual: "You are a friendly and casual chatbot. Keep your responses light and conversational.",
+      funny: "You are a humorous chatbot. Use wit and light humor in your responses while keeping them appropriate.",
+      romantic: "You are a romantic and caring chatbot. Be sweet and affectionate in your responses.",
+      supportive: "You are a supportive and empathetic chatbot. Show understanding and offer encouragement."
+    };
 
-    console.log('Starting chat with system prompt:', personality?.systemPrompt || "You are a helpful AI assistant.");
-    const chat = model.startChat({
-      history: [
-        {
-          role: "user",
-          parts: [{ text: personality?.systemPrompt || "You are a helpful AI assistant." }],
-        },
-      ],
+    // Format conversation history
+    function formatConversationHistory(history: ChatMessage[] | undefined): string {
+      if (!history || !Array.isArray(history)) return '';
+      
+      const lastMessages = history.slice(-5); // Keep last 5 messages for context
+      return lastMessages
+        .map(msg => `${msg.sender === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+        .join('\n');
+    }
+
+    // Get personality prompt
+    const personalityPrompt = personalityPrompts[personalityMode || 'casual'] || personalityPrompts.casual;
+    
+    // Format conversation history
+    const formattedHistory = formatConversationHistory(conversationHistory);
+    
+    // Create the prompt
+    const prompt = `
+      ${personalityPrompt}
+      
+      Format your responses with the following rules:
+      1. Use "**text**" for important points or emphasis
+      2. Start sections or topics with capitalized words followed by a colon
+      3. Use bullet points (•) for lists
+      4. If including links, use markdown format: [text](url)
+      5. Keep your responses well-structured and visually organized
+      
+      Previous conversation:
+      ${formattedHistory}
+      
+      User: ${message}
+      Assistant:`;
+
+    console.log('Initializing Gemini model...');
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-2.0-flash",
       generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1000,
-      },
+        temperature: 0.9,
+        maxOutputTokens: 2048,
+      }
     });
 
-    console.log('Sending message to Gemini:', message);
-    const result = await chat.sendMessage(message);
-    console.log('Received result from Gemini');
-    
+    console.log('Sending prompt to model');
+    const result = await model.generateContent(prompt);
     const response = await result.response;
-    console.log('Processed response from Gemini');
+    const text = response.text();
     
-    if (!response || !response.text()) {
-      console.error('Empty response received from Gemini API');
-      throw new Error('Empty response from Gemini API');
-    }
-
-    const responseText = response.text();
-    console.log('Successfully generated response:', responseText.substring(0, 100) + '...');
-    return NextResponse.json({ message: responseText });
-  } catch (error) {
-    console.error('Detailed error in chat API:', error);
+    console.log('Received response:', text);
     
-    // Handle specific error types
-    if (error instanceof Error) {
-      console.error('Error name:', error.name);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-      
-      if (error.message.includes('API key')) {
-        return NextResponse.json(
-          { error: 'Invalid API key configuration' },
-          { status: 401 }
-        );
-      }
-      if (error.message.includes('Empty response')) {
-        return NextResponse.json(
-          { error: 'Empty response from AI model' },
-          { status: 500 }
-        );
-      }
-      if (error.message.includes('model')) {
-        return NextResponse.json(
-          { error: 'Invalid model name or configuration' },
-          { status: 400 }
-        );
-      }
-    }
-
+    return NextResponse.json({ response: text });
+  } catch (error: unknown) {
+    console.error('Chat route error:', error);
     return NextResponse.json(
-      { error: `Failed to process chat request: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { error: error instanceof Error ? error.message : 'An error occurred while processing your request' },
       { status: 500 }
     );
   }

@@ -28,6 +28,9 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { v4 as uuidv4 } from 'uuid';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 const defaultPersonality: PersonalityMode = {
   name: 'casual',
@@ -401,107 +404,111 @@ export default function Home() {
     }
   };
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!inputMessage.trim() || !activeChatId) return;
 
-    const userMessage: Message = {
-      content: inputMessage.trim(),
-      timestamp: new Date().toISOString(),
-      role: 'user'
-    };
-
-    const currentMessage = inputMessage.trim();
-    setInputMessage('');
-    setChats(prev => prev.map(chat => {
-      if (chat.id === activeChatId) {
-        return {
-          ...chat,
-          messages: [...chat.messages, userMessage]
-        };
-      }
-      return chat;
-    }));
-
-    setIsTyping(true);
-
     try {
-      const activeChat = chats.find(chat => chat.id === activeChatId);
-      if (!activeChat) return;
+      setIsTyping(true);
+      setError(null);
 
-      const response = await fetch('/api/chat', {
+      const userMessage: Message = {
+        id: uuidv4(),
+        content: inputMessage.trim(),
+        timestamp: new Date().toISOString(),
+        role: 'user'
+      };
+
+      const currentMessage = inputMessage.trim();
+      setInputMessage('');
+      setChats(prev => prev.map(chat => {
+        if (chat.id === activeChatId) {
+          return {
+            ...chat,
+            messages: [...chat.messages, userMessage]
+          };
+        }
+        return chat;
+      }));
+
+      // Send to backend
+      const response = await fetch(`${BACKEND_URL}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           message: currentMessage,
-          chatId: activeChatId,
-          personality: activeChat.personality
+          personalityMode: activeChat?.personality,
+          conversationHistory: activeChat?.messages
         }),
       });
 
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send message');
-      }
-      
       if (!data.message) {
         throw new Error('Invalid response from server');
       }
 
       const assistantMessage: Message = {
+        id: uuidv4(),
         content: data.message,
         timestamp: new Date().toISOString(),
         role: 'assistant'
       };
 
-      // Generate title using Gemini if this is the first exchange
-      const updatedMessages = [...activeChat.messages, userMessage, assistantMessage];
-      let newTitle = activeChat.title;
+      // Update messages and save to localStorage
+      setChats(prev => prev.map(chat => {
+        if (chat.id === activeChatId) {
+          return {
+            ...chat,
+            messages: [...chat.messages, userMessage, assistantMessage],
+            timestamp: new Date().toISOString()
+          };
+        }
+        return chat;
+      }));
 
-      // Only generate new title if this is the first exchange (2 messages total)
-      if (updatedMessages.length === 2) {
+      // Generate title if this is the first exchange
+      if (activeChat?.messages.length === 0) {
         try {
-          newTitle = await generateTitleWithGemini(updatedMessages);
+          const titleResponse = await fetch(`${BACKEND_URL}/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: "Generate a concise title (max 5 words) for this conversation: " + currentMessage,
+              personalityMode: 'casual',
+              conversationHistory: []
+            }),
+          });
+
+          if (titleResponse.ok) {
+            const titleData = await titleResponse.json();
+            const newTitle = titleData.response.trim();
+            setChats(prev => prev.map(chat => {
+              if (chat.id === activeChatId) {
+                return {
+                  ...chat,
+                  title: newTitle,
+                  timestamp: new Date().toISOString()
+                };
+              }
+              return chat;
+            }));
+          }
         } catch (error) {
-          // Log the specific error from generateTitleWithGemini
-          console.error('Failed to generate title via API, falling back:', error);
-          // Fallback to local generation
-          newTitle = generateChatTitle(updatedMessages);
+          console.error('Error generating title:', error);
         }
       }
-
-      // Update chat with new messages and title
-      setChats(prev => prev.map(chat => {
-        if (chat.id === activeChatId) {
-          return {
-            ...chat,
-            messages: updatedMessages,
-            title: newTitle,
-            timestamp: new Date().toISOString() // Update timestamp when chat is modified
-          };
-        }
-        return chat;
-      }));
     } catch (error) {
       console.error('Error sending message:', error);
-      const errorMessage: Message = {
-        content: error instanceof Error 
-          ? `Error: ${error.message}`
-          : 'Sorry, I encountered an error. Please try again.',
-        timestamp: new Date().toISOString(),
-        role: 'assistant'
-      };
-      setChats(prev => prev.map(chat => {
-        if (chat.id === activeChatId) {
-          return {
-            ...chat,
-            messages: [...chat.messages, errorMessage]
-          };
-        }
-        return chat;
-      }));
+      setError('Failed to send message. Please try again.');
     } finally {
       setIsTyping(false);
     }
@@ -791,7 +798,7 @@ export default function Home() {
               <Button
                 variant="outlined"
                 startIcon={<RefreshIcon />}
-                onClick={handleResetChat}
+              onClick={handleResetChat}
                 disabled={!activeChatId}
                 sx={{
                   borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -801,8 +808,8 @@ export default function Home() {
                     bgcolor: 'rgba(59, 130, 246, 0.1)',
                   },
                 }}
-              >
-                Reset Chat
+            >
+              Reset Chat
               </Button>
             </Paper>
 
@@ -1010,7 +1017,7 @@ export default function Home() {
                   />
                 </Box>
               )}
-              <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} />
             </Paper>
 
             {/* Chat Input */}
@@ -1034,15 +1041,15 @@ export default function Home() {
                 fullWidth
                 multiline
                 maxRows={4}
-                value={inputMessage}
+            value={inputMessage}
                 onChange={handleInputChange}
                 onKeyPress={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleSendMessage();
+                    handleSendMessage(e);
                   }
                 }}
-                placeholder="Type your message..."
+            placeholder="Type your message..."
                 disabled={!activeChatId}
                 inputRef={inputRef}
                 sx={{
