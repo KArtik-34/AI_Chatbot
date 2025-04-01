@@ -30,7 +30,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { v4 as uuidv4 } from 'uuid';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+// Replace the old backend URL with the internal API route
+// const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const API_ROUTE = '/api';
 
 const defaultPersonality: PersonalityMode = {
   name: 'casual',
@@ -43,6 +45,7 @@ export default function Home() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -432,7 +435,7 @@ export default function Home() {
       }));
 
       // Send to backend
-      const response = await fetch(`${BACKEND_URL}/chat`, {
+      const response = await fetch(`${API_ROUTE}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -450,13 +453,13 @@ export default function Home() {
 
       const data = await response.json();
 
-      if (!data.message) {
+      if (!data.response) {
         throw new Error('Invalid response from server');
       }
 
       const assistantMessage: Message = {
         id: uuidv4(),
-        content: data.message,
+        content: data.response,
         timestamp: new Date().toISOString(),
         role: 'assistant'
       };
@@ -476,15 +479,14 @@ export default function Home() {
       // Generate title if this is the first exchange
       if (activeChat?.messages.length === 0) {
         try {
-          const titleResponse = await fetch(`${BACKEND_URL}/chat`, {
+          const titleResponse = await fetch(`${API_ROUTE}/generate-title`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              message: "Generate a concise title (max 5 words) for this conversation: " + currentMessage,
-              personalityMode: 'casual',
-              conversationHistory: []
+              userMessage: currentMessage,
+              assistantMessage: data.response
             }),
           });
 
